@@ -36,6 +36,7 @@ import (
 	"net"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -49,9 +50,10 @@ type WInterface interface {
 // AccessPoint defines a wifi access point
 type AccessPoint struct {
 	// MAC address
-	Address   string
-	SSID      string
-	Channel   int
+	Address string
+	SSID    string
+	Channel int
+	// Frequency unit of measure is GigaHertz(GHz)
 	Frequency float32
 	Quality   quality
 	// Currently this is just a true/flase flag
@@ -62,7 +64,7 @@ type AccessPoint struct {
 
 type quality struct {
 	Percent float32
-	// The signal is in units of decibles dB
+	// Signal unit of measure is Decibles(dB)
 	Signal int
 }
 
@@ -75,6 +77,10 @@ type Scanner struct {
 // regexp constants used to parse output
 const (
 	macAddrExp = "Cell [0-9]{2} - Address: "
+	ssidExp    = "ESSID:\""
+	channelExp = "( )*Channel:"
+	freqExp    = "Frequency:"
+	qltyExp    = "Quality="
 )
 
 // New creates a new scanner
@@ -104,7 +110,7 @@ func (s *Scanner) Scan() error {
 	}
 
 	s.results = parseOutput(&iwlistOut)
-	fmt.Println(s.results)
+
 	return nil
 }
 
@@ -115,11 +121,16 @@ func (s *Scanner) Results() []AccessPoint {
 
 func parseOutput(output *[]byte) []AccessPoint {
 
-	accesspoints := make([]AccessPoint, 1, 50)
+	var accesspoints []AccessPoint
+	var n int
 
 	results := strings.Split(string(*output), "\n")
 
 	macAddrRegExp := regexp.MustCompile(macAddrExp)
+	ssidRegExp := regexp.MustCompile(ssidExp)
+	channelRegExp := regexp.MustCompile(channelExp)
+	freqRegExp := regexp.MustCompile(freqExp)
+	qltyRegExp := regexp.MustCompile(qltyExp)
 
 	for _, result := range results {
 
@@ -131,7 +142,78 @@ func parseOutput(output *[]byte) []AccessPoint {
 			ap.Address = result[idx[1]:]
 
 			accesspoints = append(accesspoints, ap)
+			n = len(accesspoints)
 		}
+
+		if ssidRegExp.MatchString(result) {
+			idx := ssidRegExp.FindStringIndex(result)
+
+			accesspoints[n-1].SSID = result[idx[1]:(len(result) - 1)]
+		}
+
+		if channelRegExp.MatchString(result) {
+			idx := channelRegExp.FindStringIndex(result)
+
+			c, err := strconv.Atoi(result[idx[1]:])
+
+			if err != nil {
+				fmt.Println(err)
+			}
+			accesspoints[n-1].Channel = c
+		}
+
+		if freqRegExp.MatchString(result) {
+			idx := freqRegExp.FindStringIndex(result)
+
+			f, err := strconv.ParseFloat(result[idx[1]:idx[1]+5], 32)
+
+			if err != nil {
+				fmt.Println(err)
+			}
+			accesspoints[n-1].Frequency = float32(f)
+		}
+
+		if qltyRegExp.MatchString(result) {
+			idx := qltyRegExp.FindStringIndex(result)
+
+			substr := result[idx[1]:]
+
+			percentageRegExp := regexp.MustCompile("[0-9]+/")
+			percentageIdx := percentageRegExp.FindStringIndex(substr)
+
+			num1, err := strconv.Atoi(substr[percentageIdx[0]:(percentageIdx[1] - 1)])
+
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			signalRegExp := regexp.MustCompile(" Signal level=")
+			signalIdx := signalRegExp.FindStringIndex(substr)
+
+			num2, err := strconv.Atoi(substr[percentageIdx[1] : signalIdx[0]-1])
+
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			var qlty quality
+
+			qlty.Percent = float32(num1) / float32(num2) * 100
+
+			signalEndRegExp := regexp.MustCompile("[0-9]+")
+			signalStr := signalEndRegExp.FindString(substr[signalIdx[1]:])
+
+			sig, err := strconv.Atoi(signalStr)
+
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			qlty.Signal = sig
+
+			accesspoints[n-1].Quality = qlty
+		}
+
 	}
 
 	return accesspoints

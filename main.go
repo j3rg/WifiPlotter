@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"strings"
 
 	"github.com/j3rg/WifiPlotter/wifi"
 )
@@ -21,8 +22,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("WifiPlotter")
-	fmt.Println("===========")
+	fmt.Println("~WifiPlotter~")
+	fmt.Printf("=============\n\n")
 
 	w, err := wifi.New("wlan1")
 	if err != nil {
@@ -33,7 +34,14 @@ func main() {
 	accesspoints := w.Results()
 
 	for _, ap := range accesspoints {
-		fmt.Println(ap.Address)
+		fmt.Println(ap.SSID)
+		fmt.Println(strings.Repeat("=", len(ap.SSID)))
+		fmt.Println("MAC Address: ", ap.Address)
+		fmt.Println("Channel:     ", ap.Channel)
+		fmt.Println("Frequency:   ", ap.Frequency, "GHz")
+		fmt.Println("Quality:")
+		fmt.Printf("  Percent:    %v%%\n", ap.Quality.Percent)
+		fmt.Printf("  Signal:     %v dBm\n\n\n", ap.Quality.Signal)
 	}
 
 }
